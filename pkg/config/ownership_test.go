@@ -46,3 +46,21 @@ func TestToOptsRejectsUnknownOwnershipMode(t *testing.T) {
 		t.Fatal("ToOpts() accepted an unknown ownership mode, want an error")
 	}
 }
+
+func TestValidateOwnedBuckets(t *testing.T) {
+	ok := Config{NetworkToken: "dummy", Ownership: Ownership{Mode: "enforce", Buckets: []string{"app", "cfg:never", "lease:1h"}}}
+	if err := ok.Validate(); err != nil {
+		t.Errorf("Validate() rejected valid owned buckets: %v", err)
+	}
+
+	for name, c := range map[string]Config{
+		"bad expiry":      {NetworkToken: "dummy", Ownership: Ownership{Mode: "enforce", Buckets: []string{"app:forever"}}},
+		"duplicate":       {NetworkToken: "dummy", Ownership: Ownership{Mode: "enforce", Buckets: []string{"app", "app:never"}}},
+		"ownership off":   {NetworkToken: "dummy", Ownership: Ownership{Mode: "off", Buckets: []string{"app"}}},
+		"ownership unset": {NetworkToken: "dummy", Ownership: Ownership{Buckets: []string{"app"}}},
+	} {
+		if err := c.Validate(); err == nil {
+			t.Errorf("%s: Validate() accepted %v, want an error", name, c.Ownership)
+		}
+	}
+}

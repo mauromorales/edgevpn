@@ -382,6 +382,11 @@ var CommonFlags []cli.Flag = []cli.Flag{
 		EnvVars: []string{"EDGEVPNOWNERSHIPTTL"},
 		Value:   0,
 	},
+	&cli.StringSliceFlag{
+		Name:    "owned-bucket",
+		Usage:   "Register an application ledger bucket as owned: signed, and the first peer to write a key owns it. Repeatable. Format `name[:expiry]`, where expiry is liveness (default: the entry expires when its owner's heartbeat goes stale), never, or a duration such as 24h (the entry expires that long after its owner last changed it). Needs --ownership observe or enforce, and every node must register the same buckets.",
+		EnvVars: []string{"EDGEVPNOWNEDBUCKETS"},
+	},
 	&cli.BoolFlag{
 		Name:    "privkey-cache",
 		Usage:   "Enable privkey caching. (Experimental)",
@@ -567,6 +572,7 @@ func ConfigFromContext(c *cli.Context) *config.Config {
 				time.Duration(c.Int("ownership-ttl"))*time.Second,
 				time.Duration(c.Int("aliveness-healthcheck-interval"))*time.Second,
 			),
+			Buckets: c.StringSlice("owned-bucket"),
 		},
 	}
 }

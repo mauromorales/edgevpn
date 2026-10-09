@@ -78,9 +78,30 @@ type Config struct {
 // Ownership configures ledger ownership enforcement.
 // Mode is one of "off" (default), "observe" (sign + log violations) or
 // "enforce" (sign + reject unauthorized writes).
+//
+// Buckets registers application buckets as owned, one spec per bucket, in the
+// form accepted by blockchain.ParseOwnedBucket ("name", "name:liveness",
+// "name:never" or "name:<duration>"). They need Mode observe or enforce.
 type Ownership struct {
-	Mode string
-	TTL  time.Duration
+	Mode    string
+	TTL     time.Duration
+	Buckets []string
+}
+
+// ownedBuckets parses Buckets into a registry.
+func (o Ownership) ownedBuckets() (blockchain.Registry, error) {
+	r := blockchain.Registry{}
+	for _, spec := range o.Buckets {
+		name, p, err := blockchain.ParseOwnedBucket(spec)
+		if err != nil {
+			return nil, err
+		}
+		if _, dup := r[name]; dup {
+			return nil, fmt.Errorf("owned bucket %q given more than once", name)
+		}
+		r[name] = p
+	}
+	return r, nil
 }
 
 type PeerGuard struct {
@@ -216,8 +237,18 @@ func (c Config) Validate() error {
 	// Validate runs at the top of ToOpts, before any option is built and long
 	// before the host exists, so a typo fails the process instead of silently
 	// starting a node with ledger authentication disabled.
-	if _, err := blockchain.ParseOwnershipMode(c.Ownership.Mode); err != nil {
+	mode, err := blockchain.ParseOwnershipMode(c.Ownership.Mode)
+	if err != nil {
 		return err
+	}
+	if _, err := c.Ownership.ownedBuckets(); err != nil {
+		return err
+	}
+	// Owned buckets are only enforced when ownership is on; accepting them
+	// with ownership off would leave the operator believing a bucket is
+	// protected when any token holder can overwrite it.
+	if len(c.Ownership.Buckets) > 0 && mode == blockchain.OwnershipOff {
+		return fmt.Errorf("owned buckets need ownership mode observe or enforce, not off")
 	}
 	return nil
 }
@@ -306,9 +337,15 @@ func (c Config) ToOpts(l log.StandardLogger) ([]node.Option, []vpn.Option, error
 		return nil, nil, err
 	}
 
+	ownedBuckets, err := c.Ownership.ownedBuckets()
+	if err != nil {
+		return nil, nil, err
+	}
+
 	opts := []node.Option{
 		node.ListenAddresses(c.ListenMaddrs...),
 		node.WithOwnership(ownershipMode, c.Ownership.TTL),
+		node.WithBucketPolicies(ownedBuckets),
 		node.WithDiscoveryInterval(c.Discovery.Interval),
 		node.WithLedgerAnnounceTime(c.Ledger.AnnounceInterval),
 		node.WithLedgerInterval(c.Ledger.SyncInterval),

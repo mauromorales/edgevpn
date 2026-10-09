@@ -14,6 +14,8 @@ limitations under the License.
 package blockchain
 
 import (
+	"fmt"
+	"strings"
 	"time"
 
 	"github.com/mudler/edgevpn/pkg/protocol"
@@ -50,6 +52,63 @@ type Registry map[string]BucketPolicy
 
 // Policy returns the policy for a bucket, or the open/legacy zero value.
 func (r Registry) Policy(bucket string) BucketPolicy { return r[bucket] }
+
+// OwnedBucket returns the policy for an application bucket that is signed and
+// first-claim: the value carries no owner field (OwnerOf is nil, as for dns),
+// so the first signer of a key owns it and only that signer may update or
+// delete it until the entry expires under the given ExpiryKind. ttl is used
+// only by Absolute.
+func OwnedBucket(expiry ExpiryKind, ttl time.Duration) BucketPolicy {
+	return BucketPolicy{Owned: true, OwnerOf: nil, Expiry: expiry, TTL: ttl, Reclaimable: expiry != NoExpiry}
+}
+
+// ParseOwnedBucket parses an owned-bucket spec as given to --owned-bucket:
+//
+//	name             first-claim, expires with the owner's liveness (as dns)
+//	name:liveness    same as above
+//	name:never       first-claim, never expires
+//	name:<duration>  first-claim, expires <duration> after the entry's own
+//	                 signed timestamp (Absolute, e.g. "name:24h")
+//
+// Bucket names containing ':' cannot be given this way; register them with
+// node.WithBucketPolicies instead.
+func ParseOwnedBucket(spec string) (string, BucketPolicy, error) {
+	name, expiry, hasExpiry := strings.Cut(strings.TrimSpace(spec), ":")
+	if name == "" {
+		return "", BucketPolicy{}, fmt.Errorf("invalid owned bucket %q: empty bucket name", spec)
+	}
+	if !hasExpiry {
+		return name, OwnedBucket(Liveness, 0), nil
+	}
+	switch strings.ToLower(expiry) {
+	case "liveness":
+		return name, OwnedBucket(Liveness, 0), nil
+	case "never":
+		return name, OwnedBucket(NoExpiry, 0), nil
+	}
+	ttl, err := time.ParseDuration(expiry)
+	if err != nil || ttl <= 0 {
+		return "", BucketPolicy{}, fmt.Errorf("invalid owned bucket %q: expiry must be \"liveness\", \"never\" or a positive duration such as \"24h\"", spec)
+	}
+	return name, OwnedBucket(Absolute, ttl), nil
+}
+
+// Merge returns a new Registry holding the policies of r and extra. A bucket
+// present in both is an error rather than a silent override, so an
+// application cannot weaken a built-in bucket by registering it again.
+func (r Registry) Merge(extra Registry) (Registry, error) {
+	out := make(Registry, len(r)+len(extra))
+	for name, p := range r {
+		out[name] = p
+	}
+	for name, p := range extra {
+		if _, ok := out[name]; ok {
+			return nil, fmt.Errorf("bucket %q already has a policy", name)
+		}
+		out[name] = p
+	}
+	return out, nil
+}
 
 // ownerIsKey is the OwnerOf for buckets where the key itself is the owner
 // peer.ID (users, healthcheck).

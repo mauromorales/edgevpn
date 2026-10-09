@@ -79,6 +79,7 @@ edgevpn file-receive [options]
 | `--peerguard` | `false` | `PEERGUARD` | Enable peerguard. (Experimental) |
 | `--ownership` | `"enforce"` | `EDGEVPNOWNERSHIP` | Ledger ownership enforcement: enforce (sign + reject unauthorized writes, default), observe (sign + log violations) or off (legacy, opt-out). All nodes on a network must run the same mode/wire format, so flip the whole network together. |
 | `--ownership-ttl` | `0` | `EDGEVPNOWNERSHIPTTL` | Liveness window in seconds after which an inactive owner's ledger entries may be reclaimed/reaped. 0 derives it from --aliveness-healthcheck-interval (4x, so 8 minutes on defaults), which keeps healthy nodes from expiring when the heartbeat is retuned. |
+| `--owned-bucket` | — | `EDGEVPNOWNEDBUCKETS` | Register an application ledger bucket as owned: signed, and the first peer to write a key owns it. Repeatable. Format `name[:expiry]`, where expiry is liveness (default: the entry expires when its owner's heartbeat goes stale), never, or a duration such as 24h (the entry expires that long after its owner last changed it). Needs --ownership observe or enforce, and every node must register the same buckets. |
 | `--privkey-cache` | `false` | `EDGEVPNPRIVKEYCACHE` | Enable privkey caching. (Experimental) |
 | `--privkey-cache-dir` | `"$HOME/.edgevpn"` | `EDGEVPNPRIVKEYCACHEDIR` | Specify a directory used to store the generated privkey |
 | `--static-peertable` | — | `EDGEVPNSTATICPEERTABLE` | List of static peers to use (in `ip:peerid` format) |

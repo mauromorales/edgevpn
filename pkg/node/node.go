@@ -81,6 +81,12 @@ func OwnershipTTLFor(heartbeat time.Duration) time.Duration {
 	return ownershipTTLHeartbeats * heartbeat
 }
 
+// ownershipRegistry is the bucket policy registry the ledger enforces: the
+// built-in buckets plus any registered with WithBucketPolicies.
+func (e *Node) ownershipRegistry(ttl time.Duration) (blockchain.Registry, error) {
+	return blockchain.DefaultRegistry(ttl).Merge(e.config.BucketPolicies)
+}
+
 // DefaultOwnershipTTL is the liveness window used when ownership is enabled
 // without an explicit TTL. It is OwnershipTTLFor(services.DefaultHealthcheckInterval)
 // — four 120s heartbeats, so 8 minutes — spelled out as a constant because
@@ -220,8 +226,12 @@ func (e *Node) startNetwork(ctx context.Context) error {
 			if ttl == 0 {
 				ttl = DefaultOwnershipTTL
 			}
+			registry, rerr := e.ownershipRegistry(ttl)
+			if rerr != nil {
+				return fmt.Errorf("could not build ledger ownership registry: %w", rerr)
+			}
 			ledger.SetSigner(signer)
-			ledger.SetOwnership(e.config.OwnershipMode, blockchain.DefaultRegistry(ttl), ttl)
+			ledger.SetOwnership(e.config.OwnershipMode, registry, ttl)
 			e.config.Logger.Infof("ledger ownership enforcement: mode=%s ttl=%s", e.config.OwnershipMode, ttl)
 		} else {
 			e.config.Logger.Warn("ownership enforcement requested but host private key is unavailable; running unsigned")
