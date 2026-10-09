@@ -14,6 +14,7 @@ limitations under the License.
 package blockchain
 
 import (
+	"strings"
 	"time"
 
 	"github.com/mudler/edgevpn/pkg/protocol"
@@ -48,8 +49,25 @@ type BucketPolicy struct {
 // behaviour for buckets we have not opted in.
 type Registry map[string]BucketPolicy
 
+// OwnedBucketPrefix marks an application bucket as owned without a code change.
+// Any bucket whose name starts with it is signed and first-claim: the first
+// signer of a key owns it, only that signer may update or delete it, and the
+// entry never expires (so no other peer can ever reclaim a live entry).
+const OwnedBucketPrefix = "owned-"
+
+// ownedAppBucket is the policy for OwnedBucketPrefix buckets.
+var ownedAppBucket = BucketPolicy{Owned: true, OwnerOf: nil, Expiry: NoExpiry}
+
 // Policy returns the policy for a bucket, or the open/legacy zero value.
-func (r Registry) Policy(bucket string) BucketPolicy { return r[bucket] }
+func (r Registry) Policy(bucket string) BucketPolicy {
+	if p, ok := r[bucket]; ok {
+		return p
+	}
+	if strings.HasPrefix(bucket, OwnedBucketPrefix) {
+		return ownedAppBucket
+	}
+	return BucketPolicy{}
+}
 
 // ownerIsKey is the OwnerOf for buckets where the key itself is the owner
 // peer.ID (users, healthcheck).
