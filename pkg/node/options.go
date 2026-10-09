@@ -15,6 +15,7 @@ package node
 
 import (
 	"encoding/base64"
+	"fmt"
 	"io/ioutil"
 	"time"
 
@@ -181,6 +182,33 @@ func WithOwnership(mode blockchain.OwnershipMode, ttl time.Duration) func(cfg *C
 	return func(cfg *Config) error {
 		cfg.OwnershipMode = mode
 		cfg.OwnershipTTL = ttl
+		return nil
+	}
+}
+
+// WithBucketPolicies registers application buckets with the ledger ownership
+// registry, alongside the built-in blockchain.DefaultRegistry. Use
+// blockchain.OwnedBucket for a signed, first-claim bucket. The policies only
+// take effect when ownership is enabled (see WithOwnership), and every node on
+// the network must register the same buckets with the same policies.
+//
+// Registering a built-in bucket, or the same bucket twice, is an error.
+func WithBucketPolicies(r blockchain.Registry) func(cfg *Config) error {
+	return func(cfg *Config) error {
+		builtin := blockchain.DefaultRegistry(0)
+		for name := range r {
+			if name == "" {
+				return errors.New("bucket policy with an empty bucket name")
+			}
+			if _, ok := builtin[name]; ok {
+				return fmt.Errorf("bucket %q is built in and cannot be registered again", name)
+			}
+		}
+		merged, err := cfg.BucketPolicies.Merge(r)
+		if err != nil {
+			return err
+		}
+		cfg.BucketPolicies = merged
 		return nil
 	}
 }

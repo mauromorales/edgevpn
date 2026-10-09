@@ -82,6 +82,10 @@ type Config struct {
 	// entries may be reclaimed/reaped.
 	OwnershipMode blockchain.OwnershipMode
 	OwnershipTTL  time.Duration
+
+	// BucketPolicies are application buckets added to the built-in
+	// blockchain.DefaultRegistry when ownership is enabled.
+	BucketPolicies blockchain.Registry
 }
 
 type Gater interface {

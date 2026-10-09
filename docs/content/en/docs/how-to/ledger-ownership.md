@@ -105,7 +105,50 @@ here — including buckets your own application writes through the API — takes
 zero policy: no owner, no expiry, writable by any peer. Its entries are still
 signed like every other write, but nothing verifies them; the only constraint
 the merge applies is the version check, which accepts an incoming entry when its
-version is strictly higher than the stored one.
+version is strictly higher than the stored one. To protect your own buckets,
+register them as described below.
+
+### Owning your application's buckets
+
+To protect a bucket your application writes, register it with
+`--owned-bucket`. The bucket is then signed and first-claim, like `dns`: the
+first peer to write a key owns it, and while the entry is live no other peer
+can overwrite or delete it.
+
+```bash
+sudo edgevpn --ownership enforce --owned-bucket myapp --owned-bucket myapp-leases:24h --token "$TOKEN"
+```
+
+| Flag | Default | Environment | Description |
+|---|---|---|---|
+| `--owned-bucket` | none | `EDGEVPNOWNEDBUCKETS` (comma separated) | Register `name[:expiry]` as an owned bucket. Repeatable |
+
+The expiry decides when another peer may take a key over:
+
+| Expiry | Entry expires | Use it for |
+|---|---|---|
+| `liveness` (the default) | when the owner's heartbeat goes stale, as for `dns` | data that belongs to a running node |
+| `<duration>`, e.g. `24h` | that long after the owner last changed the value | leases the owner renews by writing a new value |
+| `never` | never | data that must keep its first owner for good |
+
+The default is `liveness` because an expiring entry can be recovered: if a
+squatter claims a key first, or the owner loses its identity, the key frees up
+once that peer stops running. A `never` entry cannot be recovered that way.
+Its key stays with the first peer that wrote it, even if that peer loses its
+private key, so use it only with a persisted identity (see
+[Identity and restarts](#identity-and-restarts)). With a duration, re-announcing
+an unchanged value does not renew the entry; only a changed value does.
+
+`liveness` needs heartbeats from the owner. If the owner does not run the
+alive service, its entries read as expired from the start and any peer can
+take them. `edgevpn api` runs the alive service only with
+`--enable-healthchecks`.
+
+Every node on the network must register the same buckets with the same expiry,
+and `--owned-bucket` needs `--ownership observe` or `enforce`; with `off` the
+node refuses to start. Embedders pass `node.WithBucketPolicies` with
+`blockchain.OwnedBucket(...)` instead. A bucket that is already built in, such
+as `machines`, cannot be registered again.
 
 Ownership decides liveness from heartbeats, so the **alive service must be
 running**. The VPN (`edgevpn`), `api`, `service-add`/`service-connect` and

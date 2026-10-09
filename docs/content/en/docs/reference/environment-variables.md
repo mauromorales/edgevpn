@@ -288,6 +288,15 @@ Environment variables are read when the corresponding flag is not passed.
 | `EDGEVPNNATSERVICE` | `--natservice` | proxy | `true` |
 | `EDGEVPNNATSERVICE` | `--natservice` | file-send | `true` |
 | `EDGEVPNNATSERVICE` | `--natservice` | dns | `true` |
+| `EDGEVPNOWNEDBUCKETS` | `--owned-bucket` | global | — |
+| `EDGEVPNOWNEDBUCKETS` | `--owned-bucket` | start | — |
+| `EDGEVPNOWNEDBUCKETS` | `--owned-bucket` | api | — |
+| `EDGEVPNOWNEDBUCKETS` | `--owned-bucket` | service-add | — |
+| `EDGEVPNOWNEDBUCKETS` | `--owned-bucket` | service-connect | — |
+| `EDGEVPNOWNEDBUCKETS` | `--owned-bucket` | file-receive | — |
+| `EDGEVPNOWNEDBUCKETS` | `--owned-bucket` | proxy | — |
+| `EDGEVPNOWNEDBUCKETS` | `--owned-bucket` | file-send | — |
+| `EDGEVPNOWNEDBUCKETS` | `--owned-bucket` | dns | — |
 | `EDGEVPNOWNERSHIP` | `--ownership` | global | `"enforce"` |
 | `EDGEVPNOWNERSHIP` | `--ownership` | start | `"enforce"` |
 | `EDGEVPNOWNERSHIP` | `--ownership` | api | `"enforce"` |
