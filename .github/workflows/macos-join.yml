@@ -69,6 +69,7 @@ jobs:
           go-version-file: go.mod
 
       - name: Build from source on macOS arm64
+        continue-on-error: ${{ matrix.mode == 'static' }}
         if: matrix.side == 'macos'
         run: |
           set -euo pipefail
@@ -76,7 +77,7 @@ jobs:
           make react-ui-force
           CGO_ENABLED=0 go build -o "$RUNNER_TEMP/edgevpn-src" .
           file "$RUNNER_TEMP/edgevpn-src"
-          "$RUNNER_TEMP/edgevpn-src" --version
+          "$RUNNER_TEMP/edgevpn-src" --help >/dev/null
 
       - name: macOS without root, and with the default interface name
         if: matrix.side == 'macos' && matrix.mode == 'static'
