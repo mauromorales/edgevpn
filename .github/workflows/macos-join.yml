@@ -1,0 +1,128 @@
+name: macOS join test
+
+# Manual evidence run: a Linux runner and a macOS arm64 runner join one
+# throwaway network and ping each other across it.
+on:
+  push:
+    branches: [ci/macos-join-test]
+
+permissions: {}
+
+env:
+  VERSION: v0.37.2
+
+jobs:
+  tokens:
+    runs-on: ubuntu-latest
+    outputs:
+      static: ${{ steps.gen.outputs.static }}
+      dhcp: ${{ steps.gen.outputs.dhcp }}
+    steps:
+      - name: Generate two throwaway network tokens
+        id: gen
+        run: |
+          set -euo pipefail
+          base="https://github.com/mudler/edgevpn/releases/download/$VERSION"
+          curl -fsSLO "$base/edgevpn-$VERSION-Linux-x86_64.tar.gz"
+          tar xzf "edgevpn-$VERSION-Linux-x86_64.tar.gz" edgevpn
+          echo "static=$(./edgevpn -g -b)" >> "$GITHUB_OUTPUT"
+          echo "dhcp=$(./edgevpn -g -b)" >> "$GITHUB_OUTPUT"
+
+  join:
+    needs: tokens
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: [static, dhcp]
+        side: [linux, macos]
+    runs-on: ${{ matrix.side == 'macos' && 'macos-latest' || 'ubuntu-latest' }}
+    env:
+      EDGEVPNTOKEN: ${{ needs.tokens.outputs[matrix.mode] }}
+    steps:
+      - uses: actions/checkout@v4
+        if: matrix.side == 'macos'
+        with:
+          persist-credentials: false
+
+      - name: Host facts
+        run: uname -a; if [ "$(uname)" = Darwin ]; then sw_vers; fi
+
+      - name: Download the release binary
+        run: |
+          set -euo pipefail
+          if [ "$(uname)" = Darwin ]; then asset="edgevpn-$VERSION-Darwin-arm64.tar.gz"; sum="shasum -a 256"
+          else asset="edgevpn-$VERSION-Linux-x86_64.tar.gz"; sum=sha256sum; fi
+          base="https://github.com/mudler/edgevpn/releases/download/$VERSION"
+          curl -fsSLO "$base/$asset"
+          curl -fsSL "$base/edgevpn-$VERSION-checksums.txt" | grep " $asset\$" | $sum -c -
+          mkdir -p "$RUNNER_TEMP/rel"
+          tar xzf "$asset" -C "$RUNNER_TEMP/rel" edgevpn
+
+      - name: Build from source on macOS arm64
+        if: matrix.side == 'macos'
+        run: |
+          set -euo pipefail
+          go version; node --version
+          make react-ui-force
+          CGO_ENABLED=0 go build -o "$RUNNER_TEMP/edgevpn-src" .
+          file "$RUNNER_TEMP/edgevpn-src"
+          "$RUNNER_TEMP/edgevpn-src" --version
+
+      - name: macOS without root, and with the default interface name
+        if: matrix.side == 'macos' && matrix.mode == 'static'
+        run: |
+          bin="$RUNNER_TEMP/rel/edgevpn"
+          try() {
+            echo "=== $1"; shift
+            "$@" > out.log 2>&1 &
+            pid=$!; sleep 25
+            if kill -0 $pid 2>/dev/null; then echo "still running after 25s"; sudo kill $pid; else wait $pid; echo "exit $?"; fi
+            grep -vi token out.log | tail -n 25
+          }
+          try "unprivileged, interface utun7" "$bin" --interface utun7 --address 10.1.0.20/24
+          try "root, default interface name" sudo EDGEVPNTOKEN="$EDGEVPNTOKEN" "$bin" --address 10.1.0.20/24
+
+      - name: Join the network and ping the other side
+        run: |
+          set -uo pipefail
+          bin="$RUNNER_TEMP/rel/edgevpn"
+          iface=edgevpn0
+          if [ "$(uname)" = Darwin ]; then
+            iface=utun7
+            # dhcp leg runs the binary built here, static leg the release one
+            if [ "${{ matrix.mode }}" = dhcp ]; then bin="$RUNNER_TEMP/edgevpn-src"; fi
+          fi
+          args="--interface $iface --api --api-listen 127.0.0.1:8080"
+          if [ "${{ matrix.mode }}" = dhcp ]; then
+            args="$args --dhcp --lease-dir $RUNNER_TEMP/lease"
+          elif [ "$(uname)" = Darwin ]; then
+            args="$args --address 10.1.0.12/24"
+          else
+            args="$args --address 10.1.0.11/24"
+          fi
+          sudo EDGEVPNTOKEN="$EDGEVPNTOKEN" "$bin" $args > "$RUNNER_TEMP/vpn.log" 2>&1 &
+          start=$(date +%s)
+          mine=""; peer=""; ok=1
+          while [ $(( $(date +%s) - start )) -lt 600 ]; do
+            sleep 10
+            mine=$(ifconfig $iface 2>/dev/null | awk '$1=="inet"{print $2; exit}')
+            [ -n "$mine" ] || continue
+            peer=$(curl -fsS --max-time 5 http://127.0.0.1:8080/api/machines \
+              | jq -r --arg me "$mine" '[.[]? | .Address | split("/")[0] | select(. != $me)][0] // empty')
+            [ -n "$peer" ] || continue
+            if ping -c 1 "$peer" >/dev/null 2>&1; then ok=0; break; fi
+          done
+          echo "interface address: ${mine:-none}; peer: ${peer:-none}; seconds to first reply: $(( $(date +%s) - start )); result: $ok"
+          ifconfig $iface || true
+          if [ $ok = 0 ]; then
+            ping -c 30 "$peer"
+            echo "--- 1300 byte payload"; ping -c 5 -s 1300 "$peer"
+            # stay up so the other side can finish its own ping
+            sleep 120
+          fi
+          echo "--- API machines"; curl -fsS --max-time 5 http://127.0.0.1:8080/api/machines | jq -c '.[]? | {Address, OS, Arch}'
+          echo "--- log (token lines removed)"; grep -vi token "$RUNNER_TEMP/vpn.log" | tail -n 60
+          exit $ok
