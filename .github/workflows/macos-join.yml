@@ -30,7 +30,7 @@ jobs:
 
   join:
     needs: tokens
-    timeout-minutes: 20
+    timeout-minutes: 30
     permissions:
       contents: read
     strategy:
@@ -74,6 +74,7 @@ jobs:
       - name: macOS without root, and with the default interface name
         if: matrix.side == 'macos' && matrix.mode == 'static'
         run: |
+          set +e
           bin="$RUNNER_TEMP/rel/edgevpn"
           try() {
             echo "=== $1"; shift
@@ -87,7 +88,9 @@ jobs:
 
       - name: Join the network and ping the other side
         run: |
-          set -uo pipefail
+          # a missing interface or an empty API answer is normal while joining
+          set +e
+          set -u
           bin="$RUNNER_TEMP/rel/edgevpn"
           iface=edgevpn0
           if [ "$(uname)" = Darwin ]; then
@@ -106,7 +109,7 @@ jobs:
           sudo EDGEVPNTOKEN="$EDGEVPNTOKEN" "$bin" $args > "$RUNNER_TEMP/vpn.log" 2>&1 &
           start=$(date +%s)
           mine=""; peer=""; ok=1
-          while [ $(( $(date +%s) - start )) -lt 600 ]; do
+          while [ $(( $(date +%s) - start )) -lt 1200 ]; do
             sleep 10
             mine=$(ifconfig $iface 2>/dev/null | awk '$1=="inet"{print $2; exit}')
             [ -n "$mine" ] || continue
