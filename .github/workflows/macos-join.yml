@@ -30,9 +30,11 @@ jobs:
 
   join:
     needs: tokens
-    timeout-minutes: 30
+    # the Linux side may wait hours for a macOS runner to be assigned
+    timeout-minutes: 360
     permissions:
       contents: read
+      actions: read
     strategy:
       fail-fast: false
       matrix:
@@ -85,6 +87,19 @@ jobs:
           }
           try "unprivileged, interface utun7" "$bin" --interface utun7 --address 10.1.0.20/24
           try "root, default interface name" sudo EDGEVPNTOKEN="$EDGEVPNTOKEN" "$bin" --address 10.1.0.20/24
+
+      - name: Wait for the macOS side to get a runner
+        if: matrix.side == 'linux'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          while :; do
+            state=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/jobs" \
+              --jq '.jobs[] | select(.name == "join (${{ matrix.mode }}, macos)") | .status')
+            echo "$(date -u +%T) macOS job: ${state:-unknown}"
+            case "$state" in in_progress|completed) break ;; esac
+            sleep 60
+          done
 
       - name: Join the network and ping the other side
         run: |
