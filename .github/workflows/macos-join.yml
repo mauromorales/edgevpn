@@ -63,6 +63,11 @@ jobs:
           mkdir -p "$RUNNER_TEMP/rel"
           tar xzf "$asset" -C "$RUNNER_TEMP/rel" edgevpn
 
+      - uses: actions/setup-go@v5
+        if: matrix.side == 'macos'
+        with:
+          go-version-file: go.mod
+
       - name: Build from source on macOS arm64
         if: matrix.side == 'macos'
         run: |
