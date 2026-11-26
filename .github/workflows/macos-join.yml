@@ -40,7 +40,7 @@ jobs:
       matrix:
         mode: [static, dhcp]
         side: [linux, macos]
-    runs-on: ${{ matrix.side == 'macos' && 'macos-15' || 'ubuntu-latest' }}
+    runs-on: ${{ matrix.side == 'macos' && 'macos-26' || 'ubuntu-latest' }}
     env:
       EDGEVPNTOKEN: ${{ needs.tokens.outputs[matrix.mode] }}
     steps:
